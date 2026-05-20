@@ -1,15 +1,13 @@
 require('dotenv').config()
 const express = require('express')
 const cors    = require('cors')
-const path    = require('path')
 
 const authRoutes    = require('./routes/auth')
 const courseRoutes  = require('./routes/courses')
 const userRoutes    = require('./routes/users')
 const webhookRoutes = require('./routes/webhook')
 
-const app  = express()
-const PORT = process.env.PORT || 4000
+const app = express()
 
 // ── Middleware ──────────────────────────────────────────────────────────────
 app.use(cors({
@@ -33,10 +31,15 @@ app.use('/api/webhook', webhookRoutes)
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status: 'ok', time: new Date().toISOString() }))
 
-// ── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🚀 VFS Server running on http://localhost:${PORT}`)
-  console.log(`   Health:   http://localhost:${PORT}/api/health`)
-  console.log(`   Webhook:  http://localhost:${PORT}/api/webhook/sepay`)
-  console.log(`   Test:     POST http://localhost:${PORT}/api/webhook/test { "email": "..." }\n`)
-})
+// ── Local dev: listen on port ────────────────────────────────────────────────
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 4000
+  app.listen(PORT, () => {
+    console.log(`\n🚀 VFS Server running on http://localhost:${PORT}`)
+    console.log(`   Health:  http://localhost:${PORT}/api/health`)
+    console.log(`   Webhook: http://localhost:${PORT}/api/webhook/sepay\n`)
+  })
+}
+
+// ── Export for Vercel serverless ─────────────────────────────────────────────
+module.exports = app
