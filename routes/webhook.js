@@ -1,0 +1,141 @@
+const express  = require('express')
+const crypto   = require('crypto')
+const supabase = require('../db')
+
+const router = express.Router()
+
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
+
+// Xác minh chữ ký HMAC từ SePay
+function verifySignature(payload, signature) {
+  const secret = process.env.SEPAY_WEBHOOK_SECRET
+  if (!secret) return true // bỏ qua nếu chưa cấu hình
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(JSON.stringify(payload))
+    .digest('hex')
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  } catch { return false }
+}
+
+// Trích số điện thoại từ nội dung "VFS 0901234567"
+function extractPhone(content = '') {
+  const match = content.match(/VFS\s*(\d{9,11})/i)
+  return match ? match[1] : null
+}
+
+/* ─── POST /api/webhook/sepay ─────────────────────────────────────────────── */
+router.post('/sepay', express.json(), async (req, res) => {
+  try {
+    // 1. Xác minh chữ ký
+    const signature = req.headers['x-sepay-signature']
+    if (signature && !verifySignature(req.body, signature)) {
+      console.warn('⚠️  Webhook: invalid signature')
+      return res.status(401).json({ error: 'Invalid signature' })
+    }
+
+    const { event, amount, transferContent, customerEmail } = req.body
+
+    console.log('📩 Webhook SePay:', { event, amount, transferContent, customerEmail })
+
+    // 2. Chỉ xử lý payment.success
+    if (event !== 'payment.success' && event !== 'payment_success') {
+      return res.json({ received: true, skipped: 'not_success_event' })
+    }
+
+    // 3. Kiểm tra số tiền
+    if (Number(amount) < 799000) {
+      console.warn(`⚠️  Số tiền không đủ: ${amount}`)
+      return res.json({ received: true, skipped: 'amount_insufficient' })
+    }
+
+    // 4. Tìm học viên theo email hoặc SĐT trong nội dung CK
+    let student = null
+
+    if (customerEmail) {
+      const { data } = await supabase
+        .from('students').select('*').eq('email', customerEmail).single()
+      student = data
+    }
+
+    if (!student && transferContent) {
+      const phone = extractPhone(transferContent)
+      if (phone) {
+        const { data } = await supabase
+          .from('students').select('*').ilike('phone', `%${phone}%`).single()
+        student = data
+      }
+    }
+
+    // 5. Đánh dấu đã thanh toán (không tạo tài khoản — admin sẽ làm thủ công)
+    if (student) {
+      if (student.paid) {
+        console.log('ℹ️  Đã thanh toán trước đó:', student.email)
+        return res.json({ received: true, skipped: 'already_paid' })
+      }
+
+      const now      = new Date()
+      const joinDate = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`
+
+      await supabase.from('students').update({
+        paid:      true,
+        status:    'pending', // chờ admin kích hoạt
+        join_date: joinDate,
+      }).eq('id', student.id)
+
+      console.log(`✅ Đánh dấu đã thanh toán: ${student.email || student.phone}`)
+    } else {
+      console.warn('⚠️  Không tìm thấy học viên:', { customerEmail, transferContent })
+      // Vẫn trả 200 để SePay không retry mãi
+    }
+
+    // 6. Gửi Telegram notification (nếu đã cấu hình)
+    await notifyTelegram(req.body, student)
+
+    return res.json({ received: true })
+
+  } catch (err) {
+    console.error('❌ Webhook error:', err)
+    return res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/* ─── Telegram notification (tuỳ chọn) ───────────────────────────────────── */
+async function notifyTelegram(payload, student) {
+  const token  = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_CHAT_ID
+  if (!token || !chatId) return // chưa cấu hình → bỏ qua
+
+  const name    = student?.name  || 'Chưa xác định'
+  const email   = student?.email || payload.customerEmail || '—'
+  const phone   = student?.phone || '—'
+  const amount  = Number(payload.amount).toLocaleString('vi-VN')
+  const content = payload.transferContent || '—'
+
+  const msg = [
+    `💰 *THANH TOÁN MỚI*`,
+    ``,
+    `👤 Học viên: ${name}`,
+    `📧 Email: ${email}`,
+    `📱 SĐT: ${phone}`,
+    `💵 Số tiền: ${amount}đ`,
+    `📝 Nội dung: ${content}`,
+    ``,
+    `👉 Vào /admin để tạo tài khoản cho học viên`,
+  ].join('\n')
+
+  try {
+    const fetch = (...args) => import('node-fetch').then(m => m.default(...args))
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
+    })
+    console.log('📱 Telegram notified')
+  } catch (e) {
+    console.error('⚠️  Telegram notify failed:', e.message)
+  }
+}
+
+module.exports = router
