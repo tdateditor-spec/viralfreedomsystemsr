@@ -15,13 +15,42 @@ function generateTempPassword() {
 
 /* ─── GET /api/users ──────────────────────────────────────────────────────── */
 router.get('/', requireAuth, async (req, res) => {
-  const { data, error } = await supabase
+  const page   = Math.max(1, parseInt(req.query.page)  || 1)
+  const limit  = Math.min(50, parseInt(req.query.limit) || 10)
+  const search = (req.query.search || '').trim()
+  const status = req.query.status || ''
+
+  const from = (page - 1) * limit
+  const to   = from + limit - 1
+
+  let query = supabase
     .from('students')
-    .select('*')
+    .select('*', { count: 'exact' })
     .order('created_at', { ascending: false })
+    .range(from, to)
+
+  if (search) {
+    query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`)
+  }
+  if (status) {
+    query = query.eq('status', status)
+  }
+
+  const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  res.json({
+    data,
+    pagination: {
+      page,
+      limit,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      hasNext: page < Math.ceil(count / limit),
+      hasPrev: page > 1,
+    }
+  })
 })
 
 /* ─── POST /api/users — Admin tạo tài khoản học viên ─────────────────────── */
