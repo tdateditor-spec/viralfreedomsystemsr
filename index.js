@@ -2,10 +2,11 @@ require('dotenv').config()
 const express = require('express')
 const cors    = require('cors')
 
-const authRoutes    = require('./routes/auth')
-const courseRoutes  = require('./routes/courses')
-const userRoutes    = require('./routes/users')
-const webhookRoutes = require('./routes/webhook')
+const authRoutes     = require('./routes/auth')
+const courseRoutes   = require('./routes/courses')
+const userRoutes     = require('./routes/users')
+const webhookRoutes  = require('./routes/webhook')
+const registerRoutes = require('./routes/register')
 
 const app = express()
 
@@ -16,6 +17,8 @@ app.use(cors({
     'http://localhost:3001',
     'http://localhost:4173',
     'https://landing-v2-three-lyart.vercel.app',
+    'https://getviralfreedomsystem.com',
+    'https://www.getviralfreedomsystem.com',
     /\.vercel\.app$/,
   ],
   credentials: true,
@@ -23,10 +26,11 @@ app.use(cors({
 app.use(express.json())
 
 // ── Routes ──────────────────────────────────────────────────────────────────
-app.use('/api/auth',    authRoutes)
-app.use('/api/courses', courseRoutes)
-app.use('/api/users',   userRoutes)
-app.use('/api/webhook', webhookRoutes)
+app.use('/api/auth',     authRoutes)
+app.use('/api/courses',  courseRoutes)
+app.use('/api/users',    userRoutes)
+app.use('/api/webhook',  webhookRoutes)
+app.use('/api/register', registerRoutes)
 
 // ── Health check ────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status: 'ok', time: new Date().toISOString() }))

@@ -1,6 +1,8 @@
 const express  = require('express')
 const crypto   = require('crypto')
+const bcrypt   = require('bcryptjs')
 const supabase = require('../db')
+const { sendWelcomeEmail } = require('../lib/email')
 
 const router = express.Router()
 
@@ -68,7 +70,7 @@ router.post('/sepay', express.json(), async (req, res) => {
       }
     }
 
-    // 5. Đánh dấu đã thanh toán (không tạo tài khoản — admin sẽ làm thủ công)
+    // 5. Tạo tài khoản + gửi email tự động
     if (student) {
       if (student.paid) {
         console.log('ℹ️  Đã thanh toán trước đó:', student.email)
@@ -78,16 +80,31 @@ router.post('/sepay', express.json(), async (req, res) => {
       const now      = new Date()
       const joinDate = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`
 
+      // Sinh mật khẩu tạm
+      const digits      = Math.floor(1000 + Math.random() * 9000)
+      const chars       = Math.random().toString(36).slice(2, 4).toUpperCase()
+      const tempPassword = `VFS${digits}${chars}`
+      const hashed      = await bcrypt.hash(tempPassword, 10)
+
       await supabase.from('students').update({
-        paid:      true,
-        status:    'pending', // chờ admin kích hoạt
-        join_date: joinDate,
+        paid:                 true,
+        status:               'active',
+        join_date:            joinDate,
+        password:             hashed,
+        must_change_password: true,
       }).eq('id', student.id)
 
-      console.log(`✅ Đánh dấu đã thanh toán: ${student.email || student.phone}`)
+      console.log(`✅ Kích hoạt tài khoản: ${student.email} | Mật khẩu tạm: ${tempPassword}`)
+
+      // Gửi email chào mừng + thông tin đăng nhập
+      try {
+        await sendWelcomeEmail({ name: student.name, email: student.email, tempPassword })
+        console.log(`📧 Đã gửi email tới: ${student.email}`)
+      } catch (emailErr) {
+        console.error('⚠️  Gửi email thất bại:', emailErr.message)
+      }
     } else {
       console.warn('⚠️  Không tìm thấy học viên:', { customerEmail, transferContent })
-      // Vẫn trả 200 để SePay không retry mãi
     }
 
     // 6. Gửi Telegram notification (nếu đã cấu hình)
