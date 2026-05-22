@@ -28,33 +28,27 @@ function extractPhone(content = '') {
 }
 
 /* ─── POST /api/webhook/sepay ─────────────────────────────────────────────── */
-router.post('/sepay',
-  express.raw({ type: 'application/json' }), // capture raw body for HMAC
-  async (req, res) => {
+router.post('/sepay', async (req, res) => {
   try {
-    // Parse raw body
-    const rawBody = req.body.toString('utf8')
-    let body
-    try { body = JSON.parse(rawBody) }
-    catch { return res.status(400).json({ error: 'Invalid JSON' }) }
+    // req.body đã được parse bởi express.json() global middleware
+    // req.rawBody là raw string được lưu bởi verify callback trong index.js
+    const body = req.body
 
     // 1. Xác minh chữ ký HMAC trên raw body string
     const signature = req.headers['x-sepay-signature']
     if (signature) {
       const secret = process.env.SEPAY_WEBHOOK_SECRET
       if (secret) {
+        const rawBody = req.rawBody || JSON.stringify(body)
         const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
-        const sigBuf = Buffer.from(signature, 'hex')
-        const expBuf = Buffer.from(expected, 'hex')
-        const valid  = sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)
-        if (!valid) {
+        if (signature !== expected) {
           console.warn('⚠️  Webhook: invalid signature')
+          console.warn('   received:', signature)
+          console.warn('   expected:', expected)
           return res.status(401).json({ error: 'Invalid signature' })
         }
       }
     }
-
-    req.body = body // gán lại để dùng bên dưới
 
     // SePay format: transferAmount, transferType, content/description
     const transferType   = body.transferType   || body.transfer_type

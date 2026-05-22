@@ -23,7 +23,9 @@ app.use(cors({
   ],
   credentials: true,
 }))
-app.use(express.json())
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf.toString('utf8') }
+}))
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth',     authRoutes)
