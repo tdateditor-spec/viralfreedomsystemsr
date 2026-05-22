@@ -68,39 +68,47 @@ router.post('/login', async (req, res) => {
 
 /* ─── POST /api/auth/change-password ─────────────────────────────────────── */
 router.post('/change-password', async (req, res) => {
-  const { email, oldPassword, newPassword } = req.body
-  if (!email || !oldPassword || !newPassword)
-    return res.status(400).json({ error: 'Thiếu thông tin' })
+  const { newPassword, oldPassword } = req.body
+  if (!newPassword) return res.status(400).json({ error: 'Thiếu mật khẩu mới' })
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Mật khẩu mới phải ít nhất 6 ký tự' })
 
-  if (newPassword.length < 6)
-    return res.status(400).json({ error: 'Mật khẩu mới phải ít nhất 6 ký tự' })
+  // Lấy user từ JWT token
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Chưa đăng nhập' })
 
-  // Thử admin
-  const { data: admin } = await supabase
-    .from('admin_users').select('*').eq('email', email).single()
+  let payload
+  try { payload = jwt.verify(auth.slice(7), JWT_SECRET) }
+  catch { return res.status(401).json({ error: 'Token không hợp lệ' }) }
 
-  if (admin) {
-    const ok = await bcrypt.compare(oldPassword, admin.password)
-    if (!ok) return res.status(401).json({ error: 'Mật khẩu cũ không đúng' })
+  // Admin
+  if (payload.role === 'admin') {
+    const { data: admin } = await supabase.from('admin_users').select('*').eq('id', payload.id).single()
+    if (!admin) return res.status(404).json({ error: 'Không tìm thấy tài khoản' })
+    if (oldPassword) {
+      const ok = await bcrypt.compare(oldPassword, admin.password)
+      if (!ok) return res.status(401).json({ error: 'Mật khẩu cũ không đúng' })
+    }
     const hashed = await bcrypt.hash(newPassword, 10)
-    await supabase.from('admin_users').update({ password: hashed }).eq('email', email)
+    await supabase.from('admin_users').update({ password: hashed }).eq('id', admin.id)
     return res.json({ message: 'Đổi mật khẩu thành công' })
   }
 
-  // Thử học viên
-  const { data: student } = await supabase
-    .from('students').select('*').eq('email', email).single()
-
+  // Học viên
+  const { data: student } = await supabase.from('students').select('*').eq('id', payload.id).single()
   if (!student) return res.status(404).json({ error: 'Không tìm thấy tài khoản' })
 
-  const ok = await bcrypt.compare(oldPassword, student.password)
-  if (!ok) return res.status(401).json({ error: 'Mật khẩu cũ không đúng' })
+  // Nếu không phải lần đầu đổi → cần xác minh mật khẩu cũ
+  if (!student.must_change_password) {
+    if (!oldPassword) return res.status(400).json({ error: 'Vui lòng nhập mật khẩu cũ' })
+    const ok = await bcrypt.compare(oldPassword, student.password)
+    if (!ok) return res.status(401).json({ error: 'Mật khẩu cũ không đúng' })
+  }
 
   const hashed = await bcrypt.hash(newPassword, 10)
   await supabase.from('students').update({
     password: hashed,
     must_change_password: false,
-  }).eq('email', email)
+  }).eq('id', student.id)
 
   return res.json({ message: 'Đổi mật khẩu thành công' })
 })
