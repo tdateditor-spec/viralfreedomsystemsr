@@ -114,7 +114,7 @@ router.post('/sepay', express.json(), async (req, res) => {
         console.error('⚠️  Gửi email thất bại:', emailErr.message)
       }
     } else {
-      console.warn('⚠️  Không tìm thấy học viên:', { customerEmail, transferContent })
+      console.warn('⚠️  Không tìm thấy học viên:', { customerEmail, content })
     }
 
     // 6. Gửi Telegram notification (nếu đã cấu hình)
@@ -135,10 +135,10 @@ async function notifyTelegram(payload, student) {
   if (!token || !chatId) return // chưa cấu hình → bỏ qua
 
   const name    = student?.name  || 'Chưa xác định'
-  const email   = student?.email || payload.customerEmail || '—'
+  const email   = student?.email || payload.customerEmail || payload.customer_email || '—'
   const phone   = student?.phone || '—'
-  const amount  = Number(payload.amount).toLocaleString('vi-VN')
-  const content = payload.transferContent || '—'
+  const amount  = Number(payload.transferAmount || payload.amount || 0).toLocaleString('vi-VN')
+  const content = payload.content || payload.description || payload.transferContent || '—'
 
   const msg = [
     `💰 *THANH TOÁN MỚI*`,
