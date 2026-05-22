@@ -37,18 +37,28 @@ router.post('/sepay', express.json(), async (req, res) => {
       return res.status(401).json({ error: 'Invalid signature' })
     }
 
-    const { event, amount, transferContent, customerEmail } = req.body
+    // SePay format: transferAmount, transferType, content/description
+    const body = req.body
+    const transferType   = body.transferType   || body.transfer_type
+    const transferAmount = body.transferAmount || body.transfer_amount || body.amount
+    const content        = body.content        || body.description     || body.transferContent || ''
+    const customerEmail  = body.customerEmail  || body.customer_email  || ''
+    const event          = body.event          || ''
 
-    console.log('📩 Webhook SePay:', { event, amount, transferContent, customerEmail })
+    console.log('📩 Webhook SePay:', JSON.stringify(body, null, 2))
 
-    // 2. Chỉ xử lý payment.success
-    if (event !== 'payment.success' && event !== 'payment_success') {
+    // 2. Chỉ xử lý tiền vào (transferType = 'in')
+    // Nếu SePay gửi event field thì check thêm
+    if (transferType && transferType !== 'in') {
+      return res.json({ received: true, skipped: 'not_incoming' })
+    }
+    if (event && event !== 'payment.success' && event !== 'payment_success') {
       return res.json({ received: true, skipped: 'not_success_event' })
     }
 
     // 3. Kiểm tra số tiền
-    if (Number(amount) < 799000) {
-      console.warn(`⚠️  Số tiền không đủ: ${amount}`)
+    if (Number(transferAmount) < 799000) {
+      console.warn(`⚠️  Số tiền không đủ: ${transferAmount}`)
       return res.json({ received: true, skipped: 'amount_insufficient' })
     }
 
@@ -61,8 +71,8 @@ router.post('/sepay', express.json(), async (req, res) => {
       student = data
     }
 
-    if (!student && transferContent) {
-      const phone = extractPhone(transferContent)
+    if (!student && content) {
+      const phone = extractPhone(content)
       if (phone) {
         const { data } = await supabase
           .from('students').select('*').ilike('phone', `%${phone}%`).single()
