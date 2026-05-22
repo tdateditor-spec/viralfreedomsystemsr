@@ -47,4 +47,19 @@ router.post('/', async (req, res) => {
   res.json({ ok: true })
 })
 
+/* ─── GET /api/register/status?email=xxx — Check payment status ──────────── */
+router.get('/status', async (req, res) => {
+  const { email } = req.query
+  if (!email) return res.status(400).json({ error: 'Thiếu email' })
+
+  const { data } = await supabase
+    .from('students')
+    .select('paid, status')
+    .eq('email', email)
+    .single()
+
+  if (!data) return res.json({ found: false, paid: false })
+  res.json({ found: true, paid: data.paid, status: data.status })
+})
+
 module.exports = router
