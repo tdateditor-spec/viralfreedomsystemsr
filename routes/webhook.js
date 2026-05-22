@@ -153,7 +153,6 @@ async function notifyTelegram(payload, student) {
   ].join('\n')
 
   try {
-    const fetch = (...args) => import('node-fetch').then(m => m.default(...args))
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
