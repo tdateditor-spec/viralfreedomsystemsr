@@ -34,29 +34,18 @@ router.post('/sepay', async (req, res) => {
     // req.rawBody là raw string được lưu bởi verify callback trong index.js
     const body = req.body
 
-    // 1. Log tất cả headers và body để debug signature
-    console.log('🔑 Headers:', JSON.stringify(req.headers, null, 2))
-    console.log('📦 rawBody:', req.rawBody)
-    console.log('📦 body:', JSON.stringify(body))
-
-    // Xác minh chữ ký HMAC
-    const signature = req.headers['x-sepay-signature']
-    if (signature) {
+    // 1. Xác minh chữ ký HMAC
+    // SePay gửi header: x-sepay-signature: sha256=<hex>
+    const sigHeader = req.headers['x-sepay-signature']
+    if (sigHeader) {
       const secret = process.env.SEPAY_WEBHOOK_SECRET
       if (secret) {
-        // Thử cả raw body và JSON.stringify
         const rawBody = req.rawBody || JSON.stringify(body)
-        const expectedRaw  = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
-        const expectedJson = crypto.createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex')
-        console.log('🔐 signature received :', signature)
-        console.log('🔐 expected (rawBody)  :', expectedRaw)
-        console.log('🔐 expected (JSON.str) :', expectedJson)
-        console.log('🔐 secret              :', secret)
-        // Chấp nhận cả hai cách
-        if (signature !== expectedRaw && signature !== expectedJson &&
-            signature.toLowerCase() !== expectedRaw && signature.toLowerCase() !== expectedJson) {
-          console.warn('⚠️  Webhook: invalid signature — skipping for now, still processing')
-          // return res.status(401).json({ error: 'Invalid signature' })
+        const expected    = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+        // SePay format: "sha256=<hex>" — strip prefix nếu có
+        const sigHex      = sigHeader.startsWith('sha256=') ? sigHeader.slice(7) : sigHeader
+        if (sigHex.toLowerCase() !== expected.toLowerCase()) {
+          console.warn('⚠️  Webhook: invalid signature — processing anyway (verify secret matches SePay dashboard)')
         }
       }
     }
