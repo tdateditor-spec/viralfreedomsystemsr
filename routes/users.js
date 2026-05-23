@@ -53,9 +53,16 @@ router.get('/', requireAuth, async (req, res) => {
   })
 })
 
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
+function capitalizeName(str = '') {
+  return str.trim().replace(/\s+/g, ' ')
+    .split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
 /* ─── POST /api/users — Admin tạo tài khoản học viên ─────────────────────── */
 router.post('/', requireAuth, async (req, res) => {
-  const { name, email, phone, paid, status } = req.body
+  const { email, phone, paid, status } = req.body
+  const name = capitalizeName(req.body.name || '')
   if (!name || !email) return res.status(400).json({ error: 'Thiếu tên hoặc email' })
 
   const now      = new Date()
@@ -127,6 +134,7 @@ router.put('/:id', requireAuth, async (req, res) => {
   const allowed = ['name','email','phone','status','progress','paid']
   const updates = {}
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k] })
+  if (updates.name) updates.name = capitalizeName(updates.name)
 
   const { data, error } = await supabase
     .from('students').update(updates).eq('id', req.params.id).select().single()
