@@ -131,4 +131,23 @@ router.delete('/chapters/:cid/lessons/:lid', requireAuth, async (req, res) => {
   res.json({ ok: true })
 })
 
+// GET /api/courses/progress — lấy danh sách lesson đã hoàn thành của user
+router.get('/progress', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('lesson_completions')
+    .select('lesson_id')
+    .eq('user_id', req.user.id)
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ done: data.map(r => r.lesson_id) })
+})
+
+// POST /api/courses/progress/:lessonId — đánh dấu bài học hoàn thành
+router.post('/progress/:lessonId', requireAuth, async (req, res) => {
+  const { error } = await supabase
+    .from('lesson_completions')
+    .upsert({ user_id: req.user.id, lesson_id: req.params.lessonId })
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ ok: true })
+})
+
 module.exports = router
