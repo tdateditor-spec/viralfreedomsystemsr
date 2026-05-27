@@ -33,6 +33,9 @@ router.get('/', requireAuth, async (req, res) => {
         duration: l.duration,
         free: l.free,
         videoUrl: l.video_url,
+        keyPoints: l.key_points || '',
+        content: l.content || '',
+        tags: l.tags || '',
       }))
   }))
 
@@ -76,7 +79,7 @@ router.delete('/chapters/:cid', requireAuth, async (req, res) => {
 
 // POST /api/courses/chapters/:cid/lessons — thêm bài học
 router.post('/chapters/:cid/lessons', requireAuth, async (req, res) => {
-  const { title, duration, free, videoUrl } = req.body
+  const { title, duration, free, videoUrl, keyPoints, content, tags } = req.body
   if (!title) return res.status(400).json({ error: 'Thiếu tiêu đề bài học' })
 
   const { data: existing } = await supabase
@@ -92,27 +95,33 @@ router.post('/chapters/:cid/lessons', requireAuth, async (req, res) => {
     duration: duration || '00:00',
     free: free || false,
     video_url: videoUrl || '',
+    key_points: keyPoints || '',
+    content: content || '',
+    tags: tags || '',
   }
 
   const { data, error } = await supabase.from('lessons').insert(lesson).select().single()
   if (error) return res.status(500).json({ error: error.message })
 
-  res.status(201).json({ ...data, videoUrl: data.video_url })
+  res.status(201).json({ ...data, videoUrl: data.video_url, keyPoints: data.key_points || '', content: data.content || '', tags: data.tags || '' })
 })
 
 // PUT /api/courses/chapters/:cid/lessons/:lid — sửa bài học
 router.put('/chapters/:cid/lessons/:lid', requireAuth, async (req, res) => {
   const updates = {}
-  if (req.body.title    !== undefined) updates.title     = req.body.title
-  if (req.body.duration !== undefined) updates.duration  = req.body.duration
-  if (req.body.free     !== undefined) updates.free      = req.body.free
-  if (req.body.videoUrl !== undefined) updates.video_url = req.body.videoUrl
+  if (req.body.title     !== undefined) updates.title      = req.body.title
+  if (req.body.duration  !== undefined) updates.duration   = req.body.duration
+  if (req.body.free      !== undefined) updates.free       = req.body.free
+  if (req.body.videoUrl  !== undefined) updates.video_url  = req.body.videoUrl
+  if (req.body.keyPoints !== undefined) updates.key_points = req.body.keyPoints
+  if (req.body.content   !== undefined) updates.content    = req.body.content
+  if (req.body.tags      !== undefined) updates.tags       = req.body.tags
 
   const { data, error } = await supabase
     .from('lessons').update(updates).eq('id', req.params.lid).select().single()
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json({ ...data, videoUrl: data.video_url })
+  res.json({ ...data, videoUrl: data.video_url, keyPoints: data.key_points || '', content: data.content || '', tags: data.tags || '' })
 })
 
 // DELETE /api/courses/chapters/:cid/lessons/:lid — xoá bài học
