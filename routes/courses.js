@@ -145,7 +145,10 @@ router.get('/progress', requireAuth, async (req, res) => {
 router.post('/progress/:lessonId', requireAuth, async (req, res) => {
   const { error } = await supabase
     .from('lesson_completions')
-    .upsert({ user_id: req.user.id, lesson_id: req.params.lessonId })
+    .upsert(
+      { user_id: req.user.id, lesson_id: req.params.lessonId },
+      { onConflict: 'user_id,lesson_id' }
+    )
   if (error) return res.status(500).json({ error: error.message })
   res.json({ ok: true })
 })
