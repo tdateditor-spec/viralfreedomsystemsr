@@ -5,6 +5,59 @@ const { requireAuth } = require('../middleware/auth')
 const router = express.Router()
 const uid = () => Math.random().toString(36).slice(2,8).toUpperCase()
 
+/* Auto-detect duration từ YouTube URL */
+function secsToStr(n) {
+  const h = Math.floor(n / 3600), m = Math.floor((n % 3600) / 60), s = Math.floor(n % 60)
+  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`
+}
+
+async function fetchYouTubeMeta(url) {
+  const ytId = (url?.match(/(?:youtu\.be\/|[?&]v=)([^&\s]+)/) || [])[1]
+  if (!ytId) return null
+  try {
+    const res = await fetch(`https://www.youtube.com/watch?v=${ytId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(8000),
+    })
+    const html = await res.text()
+
+    // Duration
+    let duration = null
+    const iso = html.match(/"duration":"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?"/)
+    if (iso) {
+      const total = (parseInt(iso[1])||0)*3600 + (parseInt(iso[2])||0)*60 + (parseInt(iso[3])||0)
+      if (total > 0) duration = secsToStr(total)
+    }
+    if (!duration) {
+      const len = html.match(/"lengthSeconds":"(\d+)"/)
+      if (len) duration = secsToStr(parseInt(len[1]))
+    }
+
+    // Title
+    const titleMatch = html.match(/"title":"([^"]+)"/)
+    const title = titleMatch ? titleMatch[1].replace(/\\u[\dA-F]{4}/gi, m =>
+      String.fromCharCode(parseInt(m.replace(/\\u/,''), 16))) : null
+
+    // Thumbnail
+    const thumbnail = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+
+    return { duration, title, thumbnail, videoId: ytId }
+  } catch {}
+  return null
+}
+
+async function detectDuration(url) {
+  const meta = await fetchYouTubeMeta(url)
+  return meta?.duration || null
+}
+
+// GET /api/courses/video-metadata?url=... — lấy metadata video (title, duration, thumbnail)
+router.get('/video-metadata', requireAuth, async (req, res) => {
+  const meta = await fetchYouTubeMeta(req.query.url)
+  if (!meta) return res.status(404).json({ error: 'Không thể lấy metadata' })
+  res.json(meta)
+})
+
 // GET /api/courses — lấy toàn bộ chapters + lessons
 router.get('/', requireAuth, async (req, res) => {
   const { data: chapters, error: chErr } = await supabase
@@ -87,12 +140,13 @@ router.post('/chapters/:cid/lessons', requireAuth, async (req, res) => {
     .order('order', { ascending: false }).limit(1)
   const nextOrder = existing?.length ? existing[0].order + 1 : 1
 
+  const autoDur = await detectDuration(videoUrl)
   const lesson = {
     id: 'L' + uid(),
     chapter_id: req.params.cid,
     order: nextOrder,
     title,
-    duration: duration || '00:00',
+    duration: autoDur || duration || '00:00',
     free: free || false,
     video_url: videoUrl || '',
     key_points: keyPoints || '',
@@ -110,12 +164,18 @@ router.post('/chapters/:cid/lessons', requireAuth, async (req, res) => {
 router.put('/chapters/:cid/lessons/:lid', requireAuth, async (req, res) => {
   const updates = {}
   if (req.body.title     !== undefined) updates.title      = req.body.title
-  if (req.body.duration  !== undefined) updates.duration   = req.body.duration
   if (req.body.free      !== undefined) updates.free       = req.body.free
-  if (req.body.videoUrl  !== undefined) updates.video_url  = req.body.videoUrl
   if (req.body.keyPoints !== undefined) updates.key_points = req.body.keyPoints
   if (req.body.content   !== undefined) updates.content    = req.body.content
   if (req.body.tags      !== undefined) updates.tags       = req.body.tags
+  if (req.body.videoUrl  !== undefined) {
+    updates.video_url = req.body.videoUrl
+    // Auto-detect duration từ YouTube khi videoUrl thay đổi
+    const autoDur = await detectDuration(req.body.videoUrl)
+    updates.duration = autoDur || req.body.duration || updates.duration
+  } else if (req.body.duration !== undefined) {
+    updates.duration = req.body.duration
+  }
 
   const { data, error } = await supabase
     .from('lessons').update(updates).eq('id', req.params.lid).select().single()
