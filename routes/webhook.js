@@ -21,10 +21,32 @@ function verifySignature(payload, signature) {
   } catch { return false }
 }
 
-// Trích số điện thoại từ nội dung "VFS 0901234567"
+// Trích số điện thoại từ nội dung "VFS 0901234567 EMP"
 function extractPhone(content = '') {
   const match = content.match(/VFS\s*(\d{9,11})/i)
   return match ? match[1] : null
+}
+
+// Parse mã khoá từ nội dung CK: E=Video Editing, M=Sound Design, P=Plugin
+function parseCourses(content = '') {
+  const match = content.match(/VFS\s*\d+\s*([EMP]+)/i)
+  const code  = match?.[1]?.toUpperCase() || 'E'
+  const list  = []
+  if (code.includes('E')) list.push('Video Editing (799k)')
+  if (code.includes('M')) list.push('Sound Design (299k)')
+  if (code.includes('P')) list.push('Plugin (499k)')
+  return list.length ? list.join(', ') : 'Video Editing (799k)'
+}
+
+// Trả về mảng key khoá ['edit', 'music', 'plugin'] để gửi Drive links
+function parseCourseKeys(content = '') {
+  const match = content.match(/VFS\s*\d+\s*([EMP]+)/i)
+  const code  = match?.[1]?.toUpperCase() || 'E'
+  const keys  = []
+  if (code.includes('E')) keys.push('edit')
+  if (code.includes('M')) keys.push('music')
+  if (code.includes('P')) keys.push('plugin')
+  return keys.length ? keys : ['edit']
 }
 
 /* ─── POST /api/webhook/sepay ─────────────────────────────────────────────── */
@@ -108,20 +130,23 @@ router.post('/sepay', async (req, res) => {
       const tempPassword = `VFS${digits}${chars}`
       const hashed      = await bcrypt.hash(tempPassword, 10)
 
+      const courses = parseCourseKeys(content)
+
       await supabase.from('students').update({
         paid:                 true,
         status:               'active',
         join_date:            joinDate,
         password:             hashed,
         must_change_password: true,
+        courses,
       }).eq('id', student.id)
 
       console.log(`✅ Kích hoạt tài khoản: ${student.email} | Mật khẩu tạm: ${tempPassword}`)
 
-      // Gửi email chào mừng + thông tin đăng nhập
+      // Gửi email chào mừng + thông tin đăng nhập + Drive links
       try {
-        await sendWelcomeEmail({ name: student.name, email: student.email, tempPassword })
-        console.log(`📧 Đã gửi email tới: ${student.email}`)
+        await sendWelcomeEmail({ name: student.name, email: student.email, tempPassword, courses })
+        console.log(`📧 Đã gửi email tới: ${student.email} | Khoá: ${courses.join(', ')}`)
       } catch (emailErr) {
         console.error('⚠️  Gửi email thất bại:', emailErr.message)
       }
@@ -159,7 +184,8 @@ async function notifyTelegram(payload, student) {
     `📧 Email: ${email}`,
     `📱 SĐT: ${phone}`,
     `💵 Số tiền: ${amount}đ`,
-    `📝 Nội dung: ${content}`,
+    `🎓 Khoá học: ${parseCourses(content)}`,
+    `📝 Nội dung CK: ${content}`,
     ``,
     `👉 Vào /admin để tạo tài khoản cho học viên`,
   ].join('\n')
