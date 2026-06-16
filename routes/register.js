@@ -3,8 +3,23 @@ const supabase = require('../db')
 
 const router = express.Router()
 
+// Xoá học viên pending chưa thanh toán quá 5 phút
+async function cleanupExpiredPending() {
+  const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  const { error } = await supabase
+    .from('students')
+    .delete()
+    .eq('paid', false)
+    .eq('status', 'pending')
+    .lt('created_at', cutoff)
+  if (error) console.warn('⚠️ Cleanup error:', error.message)
+  else console.log('🧹 Đã xoá pending quá hạn')
+}
+
 /* ─── POST /api/register — Học viên đăng ký trước khi thanh toán ─────────── */
 router.post('/', async (req, res) => {
+  // Dọn dẹp pending cũ mỗi lần có đăng ký mới
+  cleanupExpiredPending().catch(() => {})
   const { name, email, phone } = req.body
   if (!name || !email || !phone) {
     return res.status(400).json({ error: 'Thiếu thông tin' })
