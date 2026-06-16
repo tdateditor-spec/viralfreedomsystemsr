@@ -101,16 +101,16 @@ router.post('/sepay', async (req, res) => {
 
     if (customerEmail) {
       const { data } = await supabase
-        .from('students').select('*').eq('email', customerEmail).single()
-      student = data
+        .from('students').select('*').eq('email', customerEmail).limit(1)
+      student = data?.[0] || null
     }
 
     if (!student && content) {
       const phone = extractPhone(content)
       if (phone) {
         const { data } = await supabase
-          .from('students').select('*').ilike('phone', `%${phone}%`).single()
-        student = data
+          .from('students').select('*').ilike('phone', `%${phone}%`).order('created_at', { ascending: false }).limit(1)
+        student = data?.[0] || null
       }
     }
 
