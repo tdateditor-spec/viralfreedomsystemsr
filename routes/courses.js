@@ -133,6 +133,18 @@ router.post('/chapters', requireAuth, async (req, res) => {
   res.status(201).json({ ...data, lessons: [] });
 });
 
+// PUT /api/courses/chapters/reorder — đổi thứ tự chapters
+router.put('/chapters/reorder', requireAuth, async (req, res) => {
+  const { order } = req.body
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order phải là array' })
+  const results = await Promise.all(
+    order.map((id, idx) => supabase.from('chapters').update({ order: idx + 1 }).eq('id', id))
+  )
+  const err = results.find(r => r.error)
+  if (err) return res.status(500).json({ error: err.error.message })
+  res.json({ ok: true })
+})
+
 // PUT /api/courses/chapters/:cid — sửa chương
 router.put('/chapters/:cid', requireAuth, async (req, res) => {
   const updates = {};
@@ -206,6 +218,18 @@ router.post('/chapters/:cid/lessons', requireAuth, async (req, res) => {
       tags: data.tags || '',
     });
 });
+
+// PUT /api/courses/chapters/:cid/lessons/reorder — đổi thứ tự lessons
+router.put('/chapters/:cid/lessons/reorder', requireAuth, async (req, res) => {
+  const { order } = req.body
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order phải là array' })
+  const results = await Promise.all(
+    order.map((id, idx) => supabase.from('lessons').update({ order: idx + 1 }).eq('id', id))
+  )
+  const err = results.find(r => r.error)
+  if (err) return res.status(500).json({ error: err.error.message })
+  res.json({ ok: true })
+})
 
 // PUT /api/courses/chapters/:cid/lessons/:lid — sửa bài học
 router.put('/chapters/:cid/lessons/:lid', requireAuth, async (req, res) => {
