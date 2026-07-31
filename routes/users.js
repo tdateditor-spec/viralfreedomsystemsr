@@ -13,6 +13,41 @@ function generateTempPassword() {
   return `VFS${digits}${chars}`; // VD: VFS7342AB
 }
 
+// Giá từng khoá (nghìn đồng) — khớp với routes/webhook.js
+const COURSE_PRICES = { edit: 799, music: 299, plugin: 499 };
+
+// Tổng tiền một học viên đã trả — cộng dồn từng khoá đã đăng ký.
+// Học viên cũ chưa có courses (trước khi tính năng ra đời) mặc định tính Video Editing.
+function studentRevenue(student) {
+  const courses = Array.isArray(student.courses) && student.courses.length
+    ? student.courses
+    : ['edit'];
+  return courses.reduce((sum, c) => sum + (COURSE_PRICES[c] || 0), 0);
+}
+
+/* ─── GET /api/users/stats — Thống kê tổng quan cho dashboard ────────────── */
+router.get('/stats', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('students')
+    .select('paid, status, progress, courses');
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const paidStudents = data.filter((s) => s.paid);
+  const revenue = paidStudents.reduce((sum, s) => sum + studentRevenue(s), 0);
+  const avgProgress = data.length
+    ? Math.round(data.reduce((sum, s) => sum + (s.progress || 0), 0) / data.length)
+    : 0;
+
+  res.json({
+    total: data.length,
+    paid: paidStudents.length,
+    active: data.filter((s) => s.status === 'active').length,
+    avgProgress,
+    revenue, // nghìn đồng
+  });
+});
+
 /* ─── GET /api/users ──────────────────────────────────────────────────────── */
 router.get('/', requireAuth, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -67,7 +102,7 @@ function capitalizeName(str = '') {
 
 /* ─── POST /api/users — Admin tạo tài khoản học viên ─────────────────────── */
 router.post('/', requireAuth, async (req, res) => {
-  const { email, phone, paid, status } = req.body;
+  const { email, phone, paid, status, courses } = req.body;
   const name = capitalizeName(req.body.name || '');
   if (!name || !email)
     return res.status(400).json({ error: 'Thiếu tên hoặc email' });
@@ -89,6 +124,7 @@ router.post('/', requireAuth, async (req, res) => {
       progress: 0,
       join_date: joinDate,
       paid: paid !== undefined ? paid : true,
+      courses: Array.isArray(courses) ? courses : [],
       password: hashed,
       must_change_password: true,
     })
@@ -103,7 +139,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   // Gửi email tài khoản cho học viên
   try {
-    await sendWelcomeEmail({ name, email, tempPassword });
+    await sendWelcomeEmail({ name, email, tempPassword, courses: data.courses?.length ? data.courses : ['edit'] });
     console.log(
       `✅ Tạo tài khoản & gửi email: ${email} | Mật khẩu tạm: ${tempPassword}`
     );
@@ -143,6 +179,7 @@ router.post('/:id/resend-email', requireAuth, async (req, res) => {
       name: student.name,
       email: student.email,
       tempPassword,
+      courses: student.courses?.length ? student.courses : ['edit'],
     });
     res.json({
       ok: true,
@@ -156,7 +193,7 @@ router.post('/:id/resend-email', requireAuth, async (req, res) => {
 
 /* ─── PUT /api/users/:id ──────────────────────────────────────────────────── */
 router.put('/:id', requireAuth, async (req, res) => {
-  const allowed = ['name', 'email', 'phone', 'status', 'progress', 'paid'];
+  const allowed = ['name', 'email', 'phone', 'status', 'progress', 'paid', 'courses'];
   const updates = {};
   allowed.forEach((k) => {
     if (req.body[k] !== undefined) updates[k] = req.body[k];
